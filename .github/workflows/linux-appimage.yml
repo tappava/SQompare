@@ -1,0 +1,151 @@
+name: Build Linux AppImage
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build-linux-appimage:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libnss3-dev libatk-bridge2.0-dev libdrm2-dev libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev libxss-dev libasound2-dev
+          sudo apt-get install -y libgtk-3-dev libxss1 libx11-xcb1 libxtst6 libxrandr2 libasound2 libpangocairo-1.0-0 libatk1.0-0 libcairo-gobject2 libgtk-3-0 libgdk-pixbuf2.0-0
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify build configuration
+        run: |
+          echo "Node.js version:" && node --version
+          echo "NPM version:" && npm --version
+          echo "Electron version:" && npx electron --version
+          echo "Build files:"
+          ls -la build/
+
+      - name: Build Linux AppImage
+        run: npm run build:linux-appimage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List build output
+        run: |
+          echo "Build artifacts:"
+          ls -la dist/
+          echo "AppImage files:"
+          find dist/ -name "*.AppImage" -exec ls -lh {} \;
+
+      - name: Upload AppImage artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-appimage
+          path: dist/*.AppImage
+          retention-days: 30
+
+      - name: Upload AppImage with version info
+        uses: actions/upload-artifact@v4
+        if: hashFiles('dist/SQompare-*.AppImage') != ''
+        with:
+          name: linux-appimage-versioned
+          path: dist/SQompare-*.AppImage
+          retention-days: 30
+
+  release-linux-appimage:
+    needs: build-linux-appimage
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download AppImage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: linux-appimage*
+          merge-multiple: true
+          path: ./artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          ls -la artifacts/
+          echo "AppImage details:"
+          find artifacts/ -name "*.AppImage" -exec file {} \;
+
+      - name: Make AppImage executable
+        run: |
+          find artifacts/ -name "*.AppImage" -exec chmod +x {} \;
+
+      - name: Create Linux AppImage Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SQompare Linux AppImage ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            ./artifacts/*.AppImage
+          body: |
+            ## SQompare Linux AppImage Release ${{ github.ref_name }}
+            
+            ### Download:
+            - **SQompare-*.AppImage** - Portable Linux executable (recommended)
+            
+            ### Installation & Usage:
+            ```bash
+            # Download the AppImage
+            wget https://github.com/tappava/SQompare/releases/download/${{ github.ref_name }}/SQompare-${{ github.ref_name }}.AppImage
+            
+            # Make it executable
+            chmod +x SQompare-*.AppImage
+            
+            # Run the application
+            ./SQompare-*.AppImage
+            ```
+            
+            ### System Requirements:
+            - Linux with glibc 2.17 or later
+            - X11 or Wayland display server
+            - No additional installation required
+            
+            ### Features:
+            - ✅ Portable - runs without installation
+            - ✅ Self-contained - all dependencies included
+            - ✅ Compatible with most Linux distributions
+            - ✅ SQL database structure comparison
+            - ✅ Generate CREATE TABLE and ALTER queries
+            - ✅ Modern UI with drag-and-drop support
+            - ✅ Export comparison results
+            
+            ### Troubleshooting:
+            If the AppImage doesn't run, try:
+            ```bash
+            # Install FUSE (if not already installed)
+            sudo apt install fuse libfuse2  # Ubuntu/Debian
+            sudo dnf install fuse fuse-libs  # Fedora
+            
+            # Or extract and run directly
+            ./SQompare-*.AppImage --appimage-extract
+            ./squashfs-root/AppRun
+            ```
