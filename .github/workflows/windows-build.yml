@@ -87,23 +87,4 @@ jobs:
             ./artifacts/*.exe
           body: |
             ## SQompare Windows Release ${{ github.ref_name }}
-            
-            ### Download Options:
-            - **SQompare-Setup-*.exe** - Windows installer (recommended)
-            - **SQompare-*.exe** - Portable executable (no installation required)
-            
-            ### Installation:
-            1. Download the installer (.exe) file
-            2. Run the installer and follow the setup wizard
-            3. Launch SQompare from Start Menu or desktop shortcut
-            
-            ### Portable Version:
-            1. Download the portable (.exe) file
-            2. Run directly - no installation needed
-            3. All settings are stored in the same folder as the executable
-            
-            ### What's New:
-            - SQL database structure comparison
-            - Generate CREATE TABLE and ALTER queries
-            - Modern UI with drag-and-drop support
-            - Export comparison results
+
