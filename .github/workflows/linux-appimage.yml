@@ -70,11 +70,14 @@ jobs:
           echo "Electron version:" && npx electron --version
           echo "Build files:"
           ls -la build/
+        env:
+          ELECTRON_DISABLE_SANDBOX: 1
 
       - name: Build Linux AppImage
         run: npm run build:linux-appimage
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ELECTRON_DISABLE_SANDBOX: 1
 
       - name: List build output
         run: |
