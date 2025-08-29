@@ -1,0 +1,109 @@
+name: Build Windows Release
+
+on:
+  push:
+    branches: [ master, main ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Windows executable
+        run: npm run build:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List build output
+        run: |
+          echo "Build artifacts:"
+          dir dist
+
+      - name: Upload Windows artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-executable
+          path: dist/*.exe
+          retention-days: 30
+
+      - name: Upload Windows installer (if exists)
+        uses: actions/upload-artifact@v4
+        if: hashFiles('dist/SQompare-Setup-*.exe') != ''
+        with:
+          name: windows-installer
+          path: dist/SQompare-Setup-*.exe
+          retention-days: 30
+
+  release-windows:
+    needs: build-windows
+    runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Windows artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: windows-*
+          merge-multiple: true
+          path: ./artifacts
+
+      - name: List downloaded artifacts
+        run: |
+          echo "Downloaded artifacts:"
+          dir artifacts
+
+      - name: Create Windows Release
+        uses: softprops/action-gh-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: SQompare Windows ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            ./artifacts/*.exe
+          body: |
+            ## SQompare Windows Release ${{ github.ref_name }}
+            
+            ### Download Options:
+            - **SQompare-Setup-*.exe** - Windows installer (recommended)
+            - **SQompare-*.exe** - Portable executable (no installation required)
+            
+            ### Installation:
+            1. Download the installer (.exe) file
+            2. Run the installer and follow the setup wizard
+            3. Launch SQompare from Start Menu or desktop shortcut
+            
+            ### Portable Version:
+            1. Download the portable (.exe) file
+            2. Run directly - no installation needed
+            3. All settings are stored in the same folder as the executable
+            
+            ### What's New:
+            - SQL database structure comparison
+            - Generate CREATE TABLE and ALTER queries
+            - Modern UI with drag-and-drop support
+            - Export comparison results
