@@ -25,8 +25,40 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libnss3-dev libatk-bridge2.0-dev libdrm-dev libxcomposite-dev libxdamage-dev libxrandr-dev libgbm-dev libxss-dev libasound2-dev
-          sudo apt-get install -y libgtk-3-dev libxss1 libx11-xcb1 libxtst6 libxrandr2 libasound2 libpangocairo-1.0-0 libatk1.0-0 libcairo-gobject2 libgtk-3-0 libgdk-pixbuf2.0-0
+          
+          # Core Electron dependencies
+          sudo apt-get install -y \
+            libnss3-dev \
+            libatk-bridge2.0-dev \
+            libdrm-dev \
+            libxcomposite-dev \
+            libxdamage-dev \
+            libxrandr-dev \
+            libgbm-dev \
+            libxss-dev \
+            libasound2-dev
+          
+          # GUI and desktop integration
+          sudo apt-get install -y \
+            libgtk-3-dev \
+            libxss1 \
+            libx11-xcb1 \
+            libxtst6 \
+            libxrandr2 \
+            libpangocairo-1.0-0 \
+            libatk1.0-0 \
+            libcairo-gobject2 \
+            libgtk-3-0 \
+            libgdk-pixbuf2.0-0
+          
+          # Try to install libasound2t64, fallback to libasound2 if not available
+          sudo apt-get install -y libasound2t64 || sudo apt-get install -y libasound2 || echo "Warning: Could not install libasound2 package"
+          
+          # Additional libraries for AppImage compatibility
+          sudo apt-get install -y \
+            libgconf-2-4 \
+            libxfixes3 \
+            libxcomposite1 || echo "Some optional packages could not be installed"
 
       - name: Install dependencies
         run: npm ci
