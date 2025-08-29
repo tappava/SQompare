@@ -147,7 +147,7 @@ To create a new release with automated builds:
 
 # Then build the Linux package
 npm run build:linux
-```
+
 
 ### How to Use
 
