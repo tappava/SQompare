@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SQompare - SQL Database Structure Comparison</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div id="app">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-database" style="color: white;"></i>
+                    <div>
+                        <h1>SQompare</h1>
+                        <span class="subtitle">by tappava</span>
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-secondary" id="clearAll">
+                        <i class="fas fa-trash-alt"></i>
+                        Clear All
+                    </button>
+                    <button class="btn btn-primary" id="compareBtn" disabled>
+                        <i class="fas fa-code-compare"></i>
+                        Compare Structures
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- File Import Section -->
+            <section class="import-section">
+                <div class="import-container">
+                    <div class="import-card" id="file1Card">
+                        <div class="import-header">
+                            <h3><i class="fas fa-file-alt"></i> Database 1</h3>
+                            <span class="file-status" id="file1Status">No file selected</span>
+                        </div>
+                        <div class="import-content">
+                            <div class="drop-zone" id="dropZone1">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>Drop SQL file here or <button class="link-btn" id="browseFile1">browse</button></p>
+                                <small>Supports .sql files</small>
+                            </div>
+                            <div class="file-info" id="fileInfo1" style="display: none;">
+                                <div class="file-details">
+                                    <i class="fas fa-file-code"></i>
+                                    <div>
+                                        <strong id="fileName1"></strong>
+                                        <p id="fileStats1"></p>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-secondary" id="removeFile1">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="vs-divider">
+                        <span>VS</span>
+                    </div>
+
+                    <div class="import-card" id="file2Card">
+                        <div class="import-header">
+                            <h3><i class="fas fa-file-alt"></i> Database 2</h3>
+                            <span class="file-status" id="file2Status">No file selected</span>
+                        </div>
+                        <div class="import-content">
+                            <div class="drop-zone" id="dropZone2">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>Drop SQL file here or <button class="link-btn" id="browseFile2">browse</button></p>
+                                <small>Supports .sql files</small>
+                            </div>
+                            <div class="file-info" id="fileInfo2" style="display: none;">
+                                <div class="file-details">
+                                    <i class="fas fa-file-code"></i>
+                                    <div>
+                                        <strong id="fileName2"></strong>
+                                        <p id="fileStats2"></p>
+                                    </div>
+                                </div>
+                                <button class="btn btn-sm btn-secondary" id="removeFile2">
+                                    <i class="fas fa-times"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Results Section -->
+            <section class="results-section" id="resultsSection" style="display: none;">
+                <div class="results-header">
+                    <h2><i class="fas fa-chart-line"></i> Comparison Results</h2>
+                    <div class="results-actions">
+                        <button class="btn btn-secondary" id="exportReport">
+                            <i class="fas fa-download"></i>
+                            Export Report
+                        </button>
+                    </div>
+                </div>
+
+                <div class="results-summary">
+                    <div class="summary-card">
+                        <div class="summary-icon missing">
+                            <i class="fas fa-exclamation-triangle"></i>
+                        </div>
+                        <div class="summary-content">
+                            <h3 id="missingTablesCount">0</h3>
+                            <p>Missing Tables</p>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon missing">
+                            <i class="fas fa-columns"></i>
+                        </div>
+                        <div class="summary-content">
+                            <h3 id="missingColumnsCount">0</h3>
+                            <p>Missing Columns</p>
+                        </div>
+                    </div>
+                    <div class="summary-card">
+                        <div class="summary-icon match">
+                            <i class="fas fa-check"></i>
+                        </div>
+                        <div class="summary-content">
+                            <h3 id="matchingTablesCount">0</h3>
+                            <p>Matching Tables</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="results-tabs">
+                    <button class="tab-btn active" data-tab="missing-tables">Missing Tables</button>
+                    <button class="tab-btn" data-tab="missing-columns">Missing Columns</button>
+                    <button class="tab-btn" data-tab="create-tables">CREATE Tables</button>
+                    <button class="tab-btn" data-tab="alter-queries">ALTER Queries</button>
+                </div>
+
+                <div class="results-content">
+                    <div class="tab-content active" id="missing-tables">
+                        <div class="table-container">
+                            <table class="results-table">
+                                <thead>
+                                    <tr>
+                                        <th>Table Name</th>
+                                        <th>Present In</th>
+                                        <th>Missing From</th>
+                                        <th>Column Count</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="missingTablesBody">
+                                    <!-- Dynamic content -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="missing-columns">
+                        <div class="table-container">
+                            <table class="results-table">
+                                <thead>
+                                    <tr>
+                                        <th>Table Name</th>
+                                        <th>Column Name</th>
+                                        <th>Data Type</th>
+                                        <th>Missing From</th>
+                                        <th>Nullable</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="missingColumnsBody">
+                                    <!-- Dynamic content -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="create-tables">
+                        <div class="queries-container">
+                            <div class="queries-header">
+                                <h4>CREATE TABLE Statements for Missing Tables</h4>
+                                <button class="btn btn-sm btn-secondary" id="copyCreateQueries">
+                                    <i class="fas fa-copy"></i>
+                                    Copy All
+                                </button>
+                            </div>
+                            <pre class="code-block" id="createTablesContent">
+                                <!-- Dynamic content -->
+                            </pre>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="alter-queries">
+                        <div class="queries-container">
+                            <div class="queries-header">
+                                <h4>Generated ALTER TABLE Statements</h4>
+                                <button class="btn btn-sm btn-secondary" id="copyQueries">
+                                    <i class="fas fa-copy"></i>
+                                    Copy All
+                                </button>
+                            </div>
+                            <pre class="code-block" id="alterQueriesContent">
+                                <!-- Dynamic content -->
+                            </pre>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- Loading overlay -->
+        <div class="loading-overlay" id="loadingOverlay" style="display: none;">
+            <div class="loading-content">
+                <div class="spinner"></div>
+                <p>Comparing database structures...</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="sql-parser.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
