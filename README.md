@@ -210,3 +210,4 @@ For issues, questions, or feature requests, please create an issue in the projec
 ---
 
 **SQompare** - Making database structure comparison simple and elegant.
+
