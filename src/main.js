@@ -40,14 +40,14 @@ function createMenu() {
       label: 'File',
       submenu: [
         {
-          label: 'Import SQL File 1',
+          label: 'Import SQL File of Database 1',
           accelerator: 'CmdOrCtrl+1',
           click: () => {
             importSQLFile(1);
           }
         },
         {
-          label: 'Import SQL File 2',
+          label: 'Import SQL File of Database 2',
           accelerator: 'CmdOrCtrl+2',
           click: () => {
             importSQLFile(2);
@@ -55,7 +55,7 @@ function createMenu() {
         },
         { type: 'separator' },
         {
-          label: 'Export Comparison Report',
+          label: 'Export Comparison Report as SQL',
           accelerator: 'CmdOrCtrl+E',
           click: () => {
             exportReport();
@@ -94,7 +94,7 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About SQompare',
-              message: 'SQompare v1.0.0',
+              message: 'SQompare v1.1.0',
               detail: 'A modern SQL database structure comparison tool\n\nAuthor: Sebastian \'tappava\' L.'
             });
           }

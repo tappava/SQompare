@@ -89,10 +89,16 @@ class SQLParser {
         
         const columns = this.parseColumns(columnsSection);
         
+        // Extract table options (including collation)
+        const tableOptions = this.parseTableOptions(statement);
+        
         this.tables.set(tableName, {
             name: tableName,
             columns: columns,
-            source: sourceName
+            source: sourceName,
+            collation: tableOptions.collation,
+            charset: tableOptions.charset,
+            engine: tableOptions.engine
         });
     }
 
@@ -100,6 +106,40 @@ class SQLParser {
         // Find the opening parenthesis after table name
         const match = statement.match(/CREATE\s+TABLE\s+[^(]+\(\s*(.*)\s*\)(?:\s*[^;]*)?;?\s*$/is);
         return match ? match[1] : null;
+    }
+
+    parseTableOptions(statement) {
+        const options = {
+            collation: null,
+            charset: null,
+            engine: null
+        };
+
+        // Extract table options after the closing parenthesis
+        const optionsMatch = statement.match(/\)\s*([^;]*)/i);
+        if (!optionsMatch) return options;
+
+        const optionsString = optionsMatch[1];
+
+        // Extract ENGINE
+        const engineMatch = optionsString.match(/ENGINE\s*=\s*([^\s,;]+)/i);
+        if (engineMatch) {
+            options.engine = engineMatch[1];
+        }
+
+        // Extract DEFAULT CHARSET
+        const charsetMatch = optionsString.match(/(?:DEFAULT\s+)?(?:CHARACTER\s+SET|CHARSET)\s*=\s*([^\s,;]+)/i);
+        if (charsetMatch) {
+            options.charset = charsetMatch[1];
+        }
+
+        // Extract COLLATE
+        const collateMatch = optionsString.match(/(?:DEFAULT\s+)?COLLATE\s*=\s*([^\s,;]+)/i);
+        if (collateMatch) {
+            options.collation = collateMatch[1];
+        }
+
+        return options;
     }
 
     parseColumns(columnsSection) {
@@ -181,12 +221,22 @@ class SQLParser {
         // Check for auto increment
         const autoIncrement = /\bAUTO_INCREMENT\b/i.test(definition);
         
+        // Extract column-level charset
+        const charsetMatch = definition.match(/\bCHARACTER\s+SET\s+([^\s,]+)/i);
+        const charset = charsetMatch ? charsetMatch[1] : null;
+        
+        // Extract column-level collation
+        const collateMatch = definition.match(/\bCOLLATE\s+([^\s,]+)/i);
+        const collation = collateMatch ? collateMatch[1] : null;
+        
         return {
             name: columnName,
             dataType: dataType,
             nullable: nullable,
             defaultValue: defaultValue,
             autoIncrement: autoIncrement,
+            charset: charset,
+            collation: collation,
             definition: definition
         };
     }
@@ -206,10 +256,11 @@ class SQLParser {
         return constraintKeywords.some(keyword => upperDef.startsWith(keyword));
     }
 
-    static compareStructures(tables1, tables2) {
+    static compareStructures(tables1, tables2, includeCollation = true) {
         const result = {
             missingTables: [],
             missingColumns: [],
+            differentColumns: [],
             matchingTables: [],
             alterQueries: [],
             createTableQueries: []
@@ -232,7 +283,7 @@ class SQLParser {
                 });
                 
                 // Generate CREATE TABLE query
-                result.createTableQueries.push(this.generateCreateTableQuery(table1));
+                result.createTableQueries.push(this.generateCreateTableQuery(table1, includeCollation));
             } else {
                 result.matchingTables.push(table1.name);
                 
@@ -252,8 +303,22 @@ class SQLParser {
                             column: col1
                         });
                         
-                        // Generate ALTER TABLE query
-                        result.alterQueries.push(this.generateAddColumnQuery(table1.name, col1));
+                        // Generate ALTER TABLE ADD COLUMN query
+                        result.alterQueries.push(this.generateAddColumnQuery(table1.name, col1, table1, includeCollation));
+                    } else {
+                        // Check if columns are different (data type, nullable, collation, etc.)
+                        if (this.areColumnsDifferent(col1, matchingCol2)) {
+                            result.differentColumns.push({
+                                tableName: table1.name,
+                                columnName: col1.name,
+                                sourceColumn: col1,
+                                targetColumn: matchingCol2,
+                                differences: this.getColumnDifferences(col1, matchingCol2)
+                            });
+                            
+                            // Generate ALTER TABLE MODIFY COLUMN query
+                            result.alterQueries.push(this.generateModifyColumnQuery(table1.name, col1, table1, includeCollation));
+                        }
                     }
                 });
             }
@@ -272,7 +337,7 @@ class SQLParser {
                 });
                 
                 // Generate CREATE TABLE query
-                result.createTableQueries.push(this.generateCreateTableQuery(table2));
+                result.createTableQueries.push(this.generateCreateTableQuery(table2, includeCollation));
             } else {
                 // Compare columns for matching tables (reverse direction)
                 table2.columns.forEach(col2 => {
@@ -290,8 +355,8 @@ class SQLParser {
                             column: col2
                         });
                         
-                        // Generate ALTER TABLE query
-                        result.alterQueries.push(this.generateAddColumnQuery(table2.name, col2));
+                        // Generate ALTER TABLE ADD COLUMN query
+                        result.alterQueries.push(this.generateAddColumnQuery(table2.name, col2, table2, includeCollation));
                     }
                 });
             }
@@ -300,8 +365,26 @@ class SQLParser {
         return result;
     }
 
-    static generateAddColumnQuery(tableName, column) {
+    static generateAddColumnQuery(tableName, column, sourceTable = null, includeCollation = true) {
         let query = `ALTER TABLE \`${tableName}\` ADD COLUMN \`${column.name}\` ${column.dataType}`;
+        
+        // Add column-level charset if specified and includeCollation is true
+        if (includeCollation && column.charset) {
+            query += ` CHARACTER SET ${column.charset}`;
+        }
+        
+        // Add column-level collation if specified and includeCollation is true
+        if (includeCollation && column.collation) {
+            query += ` COLLATE ${column.collation}`;
+        } else if (includeCollation && sourceTable && sourceTable.collation) {
+            // If no column-level collation, use table collation for text-based columns
+            const textTypes = ['VARCHAR', 'CHAR', 'TEXT', 'TINYTEXT', 'MEDIUMTEXT', 'LONGTEXT'];
+            const columnBaseType = column.dataType.split('(')[0].toUpperCase();
+            
+            if (textTypes.includes(columnBaseType)) {
+                query += ` COLLATE ${sourceTable.collation}`;
+            }
+        }
         
         if (!column.nullable) {
             query += ' NOT NULL';
@@ -319,11 +402,95 @@ class SQLParser {
         return query;
     }
 
-    static generateCreateTableQuery(table) {
+    static areColumnsDifferent(col1, col2) {
+        // Compare key properties that would require ALTER TABLE MODIFY
+        return (
+            col1.dataType !== col2.dataType ||
+            col1.nullable !== col2.nullable ||
+            col1.defaultValue !== col2.defaultValue ||
+            col1.autoIncrement !== col2.autoIncrement ||
+            col1.charset !== col2.charset ||
+            col1.collation !== col2.collation
+        );
+    }
+
+    static getColumnDifferences(col1, col2) {
+        const differences = [];
+        
+        if (col1.dataType !== col2.dataType) {
+            differences.push(`Data type: ${col1.dataType} vs ${col2.dataType}`);
+        }
+        if (col1.nullable !== col2.nullable) {
+            differences.push(`Nullable: ${col1.nullable ? 'YES' : 'NO'} vs ${col2.nullable ? 'YES' : 'NO'}`);
+        }
+        if (col1.defaultValue !== col2.defaultValue) {
+            differences.push(`Default: ${col1.defaultValue || 'NULL'} vs ${col2.defaultValue || 'NULL'}`);
+        }
+        if (col1.autoIncrement !== col2.autoIncrement) {
+            differences.push(`Auto increment: ${col1.autoIncrement ? 'YES' : 'NO'} vs ${col2.autoIncrement ? 'YES' : 'NO'}`);
+        }
+        if (col1.charset !== col2.charset) {
+            differences.push(`Charset: ${col1.charset || 'default'} vs ${col2.charset || 'default'}`);
+        }
+        if (col1.collation !== col2.collation) {
+            differences.push(`Collation: ${col1.collation || 'default'} vs ${col2.collation || 'default'}`);
+        }
+        
+        return differences;
+    }
+
+    static generateModifyColumnQuery(tableName, column, sourceTable = null, includeCollation = true) {
+        let query = `ALTER TABLE \`${tableName}\` MODIFY COLUMN \`${column.name}\` ${column.dataType}`;
+        
+        // Add column-level charset if specified and includeCollation is true
+        if (includeCollation && column.charset) {
+            query += ` CHARACTER SET ${column.charset}`;
+        }
+        
+        // Add column-level collation if specified and includeCollation is true
+        if (includeCollation && column.collation) {
+            query += ` COLLATE ${column.collation}`;
+        } else if (includeCollation && sourceTable && sourceTable.collation) {
+            // If no column-level collation, use table collation for text-based columns
+            const textTypes = ['VARCHAR', 'CHAR', 'TEXT', 'TINYTEXT', 'MEDIUMTEXT', 'LONGTEXT'];
+            const columnBaseType = column.dataType.split('(')[0].toUpperCase();
+            
+            if (textTypes.includes(columnBaseType)) {
+                query += ` COLLATE ${sourceTable.collation}`;
+            }
+        }
+        
+        if (!column.nullable) {
+            query += ' NOT NULL';
+        }
+        
+        if (column.defaultValue !== null) {
+            query += ` DEFAULT ${column.defaultValue}`;
+        }
+        
+        if (column.autoIncrement) {
+            query += ' AUTO_INCREMENT';
+        }
+        
+        query += ';';
+        return query;
+    }
+
+    static generateCreateTableQuery(table, includeCollation = true) {
         let query = `CREATE TABLE \`${table.name}\` (\n`;
         
         const columnDefinitions = table.columns.map(column => {
             let def = `  \`${column.name}\` ${column.dataType}`;
+            
+            // Add column-level charset if specified and includeCollation is true
+            if (includeCollation && column.charset) {
+                def += ` CHARACTER SET ${column.charset}`;
+            }
+            
+            // Add column-level collation if specified and includeCollation is true
+            if (includeCollation && column.collation) {
+                def += ` COLLATE ${column.collation}`;
+            }
             
             if (!column.nullable) {
                 def += ' NOT NULL';
@@ -341,7 +508,22 @@ class SQLParser {
         });
         
         query += columnDefinitions.join(',\n');
-        query += '\n);';
+        query += '\n)';
+        
+        // Add table options
+        if (table.engine) {
+            query += ` ENGINE=${table.engine}`;
+        }
+        
+        if (table.charset) {
+            query += ` DEFAULT CHARSET=${table.charset}`;
+        }
+        
+        if (includeCollation && table.collation) {
+            query += ` COLLATE=${table.collation}`;
+        }
+        
+        query += ';';
         
         return query;
     }

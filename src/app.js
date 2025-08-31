@@ -64,6 +64,11 @@ class SQompareApp {
                 this.switchTab(e.target.dataset.tab);
             });
         });
+
+        // Collation toggle
+        document.getElementById('includeCollation').addEventListener('change', () => {
+            this.regenerateQueries();
+        });
     }
 
     initializeElectronEvents() {
@@ -242,8 +247,11 @@ class SQompareApp {
             const tables1 = this.parser1.parseSQL(this.file1Data.content, 'Database 1');
             const tables2 = this.parser2.parseSQL(this.file2Data.content, 'Database 2');
             
+            // Get collation setting
+            const includeCollation = document.getElementById('includeCollation').checked;
+            
             // Compare structures
-            this.comparisonResult = SQLParser.compareStructures(tables1, tables2);
+            this.comparisonResult = SQLParser.compareStructures(tables1, tables2, includeCollation);
             
             // Update UI with results
             this.displayResults(this.comparisonResult);
@@ -256,13 +264,14 @@ class SQompareApp {
     }
 
     displayResults(result) {
-        // Show results section
+        // Show results section and settings
         document.getElementById('resultsSection').style.display = 'block';
+        document.getElementById('settingsSection').style.display = 'block';
         
-        // Update summary
-        document.getElementById('missingTablesCount').textContent = result.missingTables.length;
-        document.getElementById('missingColumnsCount').textContent = result.missingColumns.length;
-        document.getElementById('matchingTablesCount').textContent = result.matchingTables.length;
+        // Update summary with dynamic icons
+        this.updateSummaryCard('missingTablesCount', result.missingTables.length, 'missing-tables');
+        this.updateSummaryCard('missingColumnsCount', result.missingColumns.length, 'missing-columns');
+        this.updateSummaryCard('matchingTablesCount', result.matchingTables.length, 'matching-tables');
         
         // Populate missing tables
         this.populateMissingTables(result.missingTables);
@@ -278,6 +287,36 @@ class SQompareApp {
         
         // Scroll to results
         document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
+    }
+
+    updateSummaryCard(countElementId, count, cardType) {
+        const countElement = document.getElementById(countElementId);
+        const summaryCard = countElement.closest('.summary-card');
+        const iconElement = summaryCard.querySelector('.summary-icon');
+        
+        // Update count
+        countElement.textContent = count;
+        
+        // Update icon and styling based on count and card type
+        if (cardType === 'missing-tables' || cardType === 'missing-columns') {
+            if (count === 0) {
+                // Show green checkmark for zero missing items
+                iconElement.className = 'summary-icon match';
+                iconElement.innerHTML = '<i class="fas fa-check"></i>';
+            } else {
+                // Show warning for missing items
+                iconElement.className = 'summary-icon missing';
+                if (cardType === 'missing-tables') {
+                    iconElement.innerHTML = '<i class="fas fa-exclamation-triangle"></i>';
+                } else {
+                    iconElement.innerHTML = '<i class="fas fa-columns"></i>';
+                }
+            }
+        } else if (cardType === 'matching-tables') {
+            // Always show green checkmark for matching tables
+            iconElement.className = 'summary-icon match';
+            iconElement.innerHTML = '<i class="fas fa-check"></i>';
+        }
     }
 
     populateMissingTables(missingTables) {
@@ -311,19 +350,44 @@ class SQompareApp {
         const tbody = document.getElementById('missingColumnsBody');
         tbody.innerHTML = '';
         
-        if (missingColumns.length === 0) {
-            tbody.innerHTML = '<tr><td colspan="5" style="text-align: center; color: #64748b;">No missing columns found</td></tr>';
+        // Combine missing columns and different columns from comparison result
+        const allColumns = [...missingColumns];
+        if (this.comparisonResult && this.comparisonResult.differentColumns) {
+            this.comparisonResult.differentColumns.forEach(diffCol => {
+                allColumns.push({
+                    tableName: diffCol.tableName,
+                    columnName: diffCol.columnName,
+                    dataType: diffCol.sourceColumn.dataType,
+                    missingFrom: 'Different in Database 2',
+                    nullable: diffCol.sourceColumn.nullable,
+                    isDifferent: true,
+                    differences: diffCol.differences
+                });
+            });
+        }
+        
+        if (allColumns.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #64748b;">No missing or different columns found</td></tr>';
             return;
         }
         
-        missingColumns.forEach(column => {
+        allColumns.forEach(column => {
             const row = document.createElement('tr');
+            const statusClass = column.isDifferent ? 'badge-warning' : 'badge-warning';
+            const statusText = column.isDifferent ? 'Different' : column.missingFrom;
+            
             row.innerHTML = `
                 <td><strong>${column.tableName}</strong></td>
                 <td>${column.columnName}</td>
                 <td><code>${column.dataType}</code></td>
-                <td><span class="badge badge-warning">${column.missingFrom}</span></td>
+                <td><span class="badge ${statusClass}">${statusText}</span></td>
                 <td>${column.nullable ? 'Yes' : 'No'}</td>
+                <td>${column.isDifferent && column.differences ? 
+                    `<button class="btn btn-sm btn-secondary" onclick="app.showColumnDifferences('${column.tableName}', '${column.columnName}')" title="View Differences">
+                        <i class="fas fa-eye"></i>
+                        View
+                    </button>` : '-'
+                }</td>
             `;
             tbody.appendChild(row);
         });
@@ -365,6 +429,31 @@ class SQompareApp {
             content.classList.remove('active');
         });
         document.getElementById(tabId).classList.add('active');
+    }
+
+    regenerateQueries() {
+        if (!this.comparisonResult || !this.file1Data || !this.file2Data) {
+            return;
+        }
+
+        // Re-parse and compare with current settings
+        try {
+            const tables1 = this.parser1.parseSQL(this.file1Data.content, 'Database 1');
+            const tables2 = this.parser2.parseSQL(this.file2Data.content, 'Database 2');
+            
+            // Get current collation setting
+            const includeCollation = document.getElementById('includeCollation').checked;
+            
+            // Re-compare structures with new setting
+            this.comparisonResult = SQLParser.compareStructures(tables1, tables2, includeCollation);
+            
+            // Update only the queries sections
+            this.populateCreateTableQueries(this.comparisonResult.createTableQueries);
+            this.populateAlterQueries(this.comparisonResult.alterQueries);
+            
+        } catch (error) {
+            this.showError(`Failed to regenerate queries: ${error.message}`);
+        }
     }
 
     async copyCreateQueries() {
@@ -515,6 +604,7 @@ class SQompareApp {
 
     hideResults() {
         document.getElementById('resultsSection').style.display = 'none';
+        document.getElementById('settingsSection').style.display = 'none';
     }
 
     showLoading(show) {
@@ -552,7 +642,31 @@ class SQompareApp {
                         <i class="fas fa-times"></i>
                     </button>
                 </div>
-                <div class="modal-body">
+                <div class="modal-body">`;
+
+        // Add table information if available
+        if (table.table.collation || table.table.charset || table.table.engine) {
+            structureHTML += `
+                    <div class="table-info" style="margin-bottom: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius); border: 1px solid var(--border-color);">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text-primary);">Table Properties</h4>
+                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0.5rem;">`;
+            
+            if (table.table.engine) {
+                structureHTML += `<div><strong>Engine:</strong> ${table.table.engine}</div>`;
+            }
+            if (table.table.charset) {
+                structureHTML += `<div><strong>Charset:</strong> ${table.table.charset}</div>`;
+            }
+            if (table.table.collation) {
+                structureHTML += `<div><strong>Collation:</strong> ${table.table.collation}</div>`;
+            }
+            
+            structureHTML += `
+                        </div>
+                    </div>`;
+        }
+
+        structureHTML += `
                     <div class="table-container">
                         <table class="results-table">
                             <thead>
@@ -562,6 +676,8 @@ class SQompareApp {
                                     <th>Nullable</th>
                                     <th>Default</th>
                                     <th>Auto Increment</th>
+                                    <th>Charset</th>
+                                    <th>Collation</th>
                                 </tr>
                             </thead>
                             <tbody>`;
@@ -574,6 +690,8 @@ class SQompareApp {
                     <td>${col.nullable ? 'Yes' : 'No'}</td>
                     <td>${col.defaultValue || '-'}</td>
                     <td>${col.autoIncrement ? 'Yes' : 'No'}</td>
+                    <td>${col.charset || '-'}</td>
+                    <td>${col.collation || '-'}</td>
                 </tr>`;
         });
         
@@ -588,6 +706,89 @@ class SQompareApp {
         // Add modal to body
         const modalDiv = document.createElement('div');
         modalDiv.innerHTML = structureHTML;
+        document.body.appendChild(modalDiv.firstElementChild);
+    }
+
+    showColumnDifferences(tableName, columnName) {
+        if (!this.comparisonResult || !this.comparisonResult.differentColumns) {
+            this.showError('Column differences not available.');
+            return;
+        }
+        
+        const diffColumn = this.comparisonResult.differentColumns.find(
+            col => col.tableName === tableName && col.columnName === columnName
+        );
+        
+        if (!diffColumn) {
+            this.showError('Column differences not found.');
+            return;
+        }
+        
+        let diffHTML = `<div class="table-structure-modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3><i class="fas fa-code-compare"></i> Column Differences: ${tableName}.${columnName}</h3>
+                    <button class="modal-close" onclick="this.closest('.table-structure-modal').remove()">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-container">
+                        <table class="results-table">
+                            <thead>
+                                <tr>
+                                    <th>Property</th>
+                                    <th>Database 1</th>
+                                    <th>Database 2</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><strong>Data Type</strong></td>
+                                    <td><code>${diffColumn.sourceColumn.dataType}</code></td>
+                                    <td><code>${diffColumn.targetColumn.dataType}</code></td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Nullable</strong></td>
+                                    <td>${diffColumn.sourceColumn.nullable ? 'Yes' : 'No'}</td>
+                                    <td>${diffColumn.targetColumn.nullable ? 'Yes' : 'No'}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Default Value</strong></td>
+                                    <td>${diffColumn.sourceColumn.defaultValue || '-'}</td>
+                                    <td>${diffColumn.targetColumn.defaultValue || '-'}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Auto Increment</strong></td>
+                                    <td>${diffColumn.sourceColumn.autoIncrement ? 'Yes' : 'No'}</td>
+                                    <td>${diffColumn.targetColumn.autoIncrement ? 'Yes' : 'No'}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Charset</strong></td>
+                                    <td>${diffColumn.sourceColumn.charset || '-'}</td>
+                                    <td>${diffColumn.targetColumn.charset || '-'}</td>
+                                </tr>
+                                <tr>
+                                    <td><strong>Collation</strong></td>
+                                    <td>${diffColumn.sourceColumn.collation || '-'}</td>
+                                    <td>${diffColumn.targetColumn.collation || '-'}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <div style="margin-top: 1rem; padding: 1rem; background: var(--bg-tertiary); border-radius: var(--radius); border: 1px solid var(--border-color);">
+                        <h4 style="margin: 0 0 0.5rem 0; color: var(--text-primary);">Identified Differences:</h4>
+                        <ul style="margin: 0; padding-left: 1.5rem;">
+                            ${diffColumn.differences.map(diff => `<li>${diff}</li>`).join('')}
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>`;
+        
+        // Add modal to body
+        const modalDiv = document.createElement('div');
+        modalDiv.innerHTML = diffHTML;
         document.body.appendChild(modalDiv.firstElementChild);
     }
 
@@ -688,6 +889,32 @@ const badgeStyles = `
         padding: 1.5rem;
         overflow-y: auto;
         flex: 1;
+    }
+    .table-info {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius);
+        padding: 1rem;
+        margin-bottom: 1rem;
+    }
+    .table-info h4 {
+        margin: 0 0 0.5rem 0;
+        color: var(--text-primary);
+        font-size: 1rem;
+        font-weight: 600;
+    }
+    .table-info-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 0.5rem;
+        font-size: 0.875rem;
+    }
+    .table-info-grid div {
+        padding: 0.25rem 0;
+    }
+    .table-info-grid strong {
+        color: var(--text-primary);
+        margin-right: 0.5rem;
     }
 `;
 

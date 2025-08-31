@@ -25,23 +25,23 @@ You didn't work as you should an now you Databases differ from each other? This 
 
 Download the latest release for your platform from [GitHub Releases](https://github.com/tappava/SQompare/releases):
 
-- **Windows**: `SQompare-Setup-1.0.0.exe` (installer) or `SQompare-1.0.0.exe` (portable)
-- **macOS**: `SQompare-1.0.0.dmg` (should work, I don't have a macOS device and your overlords don't allow to build it somewhere else)
-- **Linux**: `SQompare-1.0.0.AppImage` (portable) or `SQompare-1.0.0-x86_64.flatpak` (Flatpak package)
+- **Windows**: `SQompare-Setup-1.1.0.exe` (installer) or `SQompare-1.1.0.exe` (portable)
+- **macOS**: `SQompare-1.1.0.dmg` (should work, I don't have a macOS device and your overlords don't allow to build it somewhere else)
+- **Linux**: `SQompare-1.1.0.AppImage` (portable) or `SQompare-1.1.0-x86_64.flatpak` (Flatpak package)
 
 #### Installing on Linux
 
 **AppImage (Recommended for most users):**
 ```bash
 # Make executable and run
-chmod +x SQompare-1.0.0.AppImage
+chmod +x SQompare-1.1.0.AppImage
 ./SQompare-1.0.0.AppImage
 ```
 
 **Flatpak:**
 ```bash
 # Install the Flatpak package
-flatpak install SQompare-1.0.0-x86_64.flatpak
+flatpak install SQompare-1.1.0-x86_64.flatpak
 
 # Run SQompare
 flatpak run com.sqompare.app
