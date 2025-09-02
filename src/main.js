@@ -5,6 +5,8 @@ const fs = require('fs').promises;
 let mainWindow;
 
 function createWindow() {
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_IS_DEV === 'true';
+  
   // Create the browser window
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -15,7 +17,8 @@ function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       enableRemoteModule: false,
-      preload: path.join(__dirname, 'preload.js')
+      preload: path.join(__dirname, 'preload.js'),
+      devTools: isDev // Disable dev tools in production
     },
     icon: path.join(__dirname, '..', 'build', 'icon.png'),
     titleBarStyle: 'default',
@@ -30,11 +33,25 @@ function createWindow() {
     mainWindow.show();
   });
 
+  // Disable dev tools in production
+  if (!isDev) {
+    mainWindow.webContents.on('before-input-event', (event, input) => {
+      // Disable F12 and Ctrl+Shift+I
+      if (input.key === 'F12' || 
+          (input.control && input.shift && input.key === 'I') ||
+          (input.control && input.shift && input.key === 'C')) {
+        event.preventDefault();
+      }
+    });
+  }
+
   // Create application menu
   createMenu();
 }
 
 function createMenu() {
+  const isDev = process.env.NODE_ENV === 'development' || process.env.ELECTRON_IS_DEV === 'true';
+  
   const template = [
     {
       label: 'File',
@@ -76,7 +93,7 @@ function createMenu() {
       submenu: [
         { role: 'reload' },
         { role: 'forceReload' },
-        { role: 'toggleDevTools' },
+        ...(isDev ? [{ role: 'toggleDevTools' }] : []),
         { type: 'separator' },
         { role: 'resetZoom' },
         { role: 'zoomIn' },

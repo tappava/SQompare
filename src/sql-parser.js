@@ -206,9 +206,19 @@ class SQLParser {
         
         const columnName = nameMatch[1] || nameMatch[2];
         
-        // Extract data type
-        const typeMatch = definition.match(/\w+\s+([A-Z_]+(?:\([^)]+\))?)/i);
-        const dataType = typeMatch ? typeMatch[1].toUpperCase() : 'UNKNOWN';
+        // Extract data type with improved regex to handle more complex types
+        const typeMatch = definition.match(/(?:`[^`]+`|\w+)\s+([A-Z_]+(?:\([^)]+\))?(?:\s+(?:UNSIGNED|SIGNED|ZEROFILL))*)/i);
+        let dataType = 'TEXT'; // Default fallback instead of 'UNKNOWN'
+        
+        if (typeMatch) {
+            dataType = typeMatch[1].toUpperCase();
+        } else {
+            // Try alternative parsing for edge cases
+            const altMatch = definition.match(/(?:`[^`]+`|\w+)\s+([A-Z_][A-Z0-9_]*)/i);
+            if (altMatch) {
+                dataType = altMatch[1].toUpperCase();
+            }
+        }
         
         // Check if nullable
         const isNotNull = /\bNOT\s+NULL\b/i.test(definition);
@@ -263,8 +273,13 @@ class SQLParser {
             differentColumns: [],
             matchingTables: [],
             alterQueries: [],
+            modifyQueries: [],
             createTableQueries: []
         };
+
+        // Maps to group columns by table for batched queries
+        const addColumnsByTable = new Map();
+        const modifyColumnsByTable = new Map();
 
         // Convert maps to arrays for easier processing
         const tablesArray1 = Array.from(tables1.values());
@@ -303,8 +318,14 @@ class SQLParser {
                             column: col1
                         });
                         
-                        // Generate ALTER TABLE ADD COLUMN query
-                        result.alterQueries.push(this.generateAddColumnQuery(table1.name, col1, table1, includeCollation));
+                        // Group ADD columns by table for batched queries
+                        if (!addColumnsByTable.has(table1.name)) {
+                            addColumnsByTable.set(table1.name, {
+                                table: table1,
+                                columns: []
+                            });
+                        }
+                        addColumnsByTable.get(table1.name).columns.push(col1);
                     } else {
                         // Check if columns are different (data type, nullable, collation, etc.)
                         if (this.areColumnsDifferent(col1, matchingCol2)) {
@@ -316,8 +337,14 @@ class SQLParser {
                                 differences: this.getColumnDifferences(col1, matchingCol2)
                             });
                             
-                            // Generate ALTER TABLE MODIFY COLUMN query
-                            result.alterQueries.push(this.generateModifyColumnQuery(table1.name, col1, table1, includeCollation));
+                            // Group MODIFY columns by table for batched queries
+                            if (!modifyColumnsByTable.has(table1.name)) {
+                                modifyColumnsByTable.set(table1.name, {
+                                    table: table1,
+                                    columns: []
+                                });
+                            }
+                            modifyColumnsByTable.get(table1.name).columns.push(col1);
                         }
                     }
                 });
@@ -355,12 +382,28 @@ class SQLParser {
                             column: col2
                         });
                         
-                        // Generate ALTER TABLE ADD COLUMN query
-                        result.alterQueries.push(this.generateAddColumnQuery(table2.name, col2, table2, includeCollation));
+                        // Group ADD columns by table for batched queries
+                        if (!addColumnsByTable.has(table2.name)) {
+                            addColumnsByTable.set(table2.name, {
+                                table: table2,
+                                columns: []
+                            });
+                        }
+                        addColumnsByTable.get(table2.name).columns.push(col2);
                     }
                 });
             }
         });
+
+        // Generate grouped ADD column queries
+        for (const [tableName, tableData] of addColumnsByTable) {
+            result.alterQueries.push(this.generateGroupedAddColumnQuery(tableName, tableData.columns, tableData.table, includeCollation));
+        }
+
+        // Generate grouped MODIFY column queries
+        for (const [tableName, tableData] of modifyColumnsByTable) {
+            result.modifyQueries.push(this.generateGroupedModifyColumnQuery(tableName, tableData.columns, tableData.table, includeCollation));
+        }
 
         return result;
     }
@@ -386,7 +429,9 @@ class SQLParser {
             }
         }
         
-        if (!column.nullable) {
+        if (column.nullable) {
+            query += ' NULL';
+        } else {
             query += ' NOT NULL';
         }
         
@@ -398,7 +443,125 @@ class SQLParser {
             query += ' AUTO_INCREMENT';
         }
         
+        // Add AFTER clause to place column after the last existing column
+        if (sourceTable && sourceTable.columns && sourceTable.columns.length > 0) {
+            const lastColumnName = sourceTable.columns[sourceTable.columns.length - 1].name;
+            query += ` AFTER \`${lastColumnName}\``;
+        }
+        
         query += ';';
+        return query;
+    }
+
+    static generateGroupedAddColumnQuery(tableName, columns, sourceTable = null, includeCollation = true) {
+        if (columns.length === 0) return '';
+        
+        let query = `ALTER TABLE \`${tableName}\``;
+        const columnDefinitions = [];
+        
+        // Get the last column name from the source table for AFTER clause
+        let lastColumnName = null;
+        if (sourceTable && sourceTable.columns && sourceTable.columns.length > 0) {
+            lastColumnName = sourceTable.columns[sourceTable.columns.length - 1].name;
+        }
+        
+        columns.forEach((column, index) => {
+            let def = `ADD COLUMN \`${column.name}\` ${column.dataType}`;
+            
+            // Add column-level charset if specified and includeCollation is true
+            if (includeCollation && column.charset) {
+                def += ` CHARACTER SET ${column.charset}`;
+            }
+            
+            // Add column-level collation if specified and includeCollation is true
+            if (includeCollation && column.collation) {
+                def += ` COLLATE ${column.collation}`;
+            } else if (includeCollation && sourceTable && sourceTable.collation) {
+                // If no column-level collation, use table collation for text-based columns
+                const textTypes = ['VARCHAR', 'CHAR', 'TEXT', 'TINYTEXT', 'MEDIUMTEXT', 'LONGTEXT'];
+                const columnBaseType = column.dataType.split('(')[0].toUpperCase();
+                
+                if (textTypes.includes(columnBaseType)) {
+                    def += ` COLLATE ${sourceTable.collation}`;
+                }
+            }
+            
+            // Handle nullable - be explicit about NULL vs NOT NULL
+            if (column.nullable) {
+                def += ' NULL';
+            } else {
+                def += ' NOT NULL';
+            }
+            
+            if (column.defaultValue !== null) {
+                def += ` DEFAULT ${column.defaultValue}`;
+            }
+            
+            if (column.autoIncrement) {
+                def += ' AUTO_INCREMENT';
+            }
+            
+            // Add AFTER clause - for first column, add after last existing column
+            // For subsequent columns in the same ALTER statement, add after the previous column being added
+            if (index === 0 && lastColumnName) {
+                def += ` AFTER \`${lastColumnName}\``;
+            } else if (index > 0) {
+                def += ` AFTER \`${columns[index - 1].name}\``;
+            }
+            
+            columnDefinitions.push(def);
+        });
+        
+        query += '\n  ' + columnDefinitions.join(',\n  ') + ';';
+        return query;
+    }
+
+    static generateGroupedModifyColumnQuery(tableName, columns, sourceTable = null, includeCollation = true) {
+        if (columns.length === 0) return '';
+        
+        let query = `ALTER TABLE \`${tableName}\``;
+        const columnDefinitions = [];
+        
+        columns.forEach(column => {
+            let def = `MODIFY COLUMN \`${column.name}\` ${column.dataType}`;
+            
+            // Add column-level charset if specified and includeCollation is true
+            if (includeCollation && column.charset) {
+                def += ` CHARACTER SET ${column.charset}`;
+            }
+            
+            // Add column-level collation if specified and includeCollation is true
+            if (includeCollation && column.collation) {
+                def += ` COLLATE ${column.collation}`;
+            } else if (includeCollation && sourceTable && sourceTable.collation) {
+                // If no column-level collation, use table collation for text-based columns
+                const textTypes = ['VARCHAR', 'CHAR', 'TEXT', 'TINYTEXT', 'MEDIUMTEXT', 'LONGTEXT'];
+                const columnBaseType = column.dataType.split('(')[0].toUpperCase();
+                
+                if (textTypes.includes(columnBaseType)) {
+                    def += ` COLLATE ${sourceTable.collation}`;
+                }
+            }
+            
+            // Handle nullable - be explicit about NULL vs NOT NULL
+            if (column.nullable) {
+                def += ' NULL';
+            } else {
+                def += ' NOT NULL';
+            }
+            
+            if (column.defaultValue !== null) {
+                def += ` DEFAULT ${column.defaultValue}`;
+            }
+            
+            if (column.autoIncrement) {
+                def += ' AUTO_INCREMENT';
+            }
+            
+            columnDefinitions.push(def);
+        });
+        
+        query += '\n  ' + columnDefinitions.join(',\n  ') + ';';
         return query;
     }
 
@@ -460,7 +623,10 @@ class SQLParser {
             }
         }
         
-        if (!column.nullable) {
+        // Handle nullable - be explicit about NULL vs NOT NULL
+        if (column.nullable) {
+            query += ' NULL';
+        } else {
             query += ' NOT NULL';
         }
         

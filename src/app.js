@@ -58,6 +58,11 @@ class SQompareApp {
             this.copyCreateQueries();
         });
 
+        // Copy modify queries button
+        document.getElementById('copyModifyQueries').addEventListener('click', () => {
+            this.copyModifyQueries();
+        });
+
         // Tab navigation
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -285,6 +290,9 @@ class SQompareApp {
         // Generate and display ALTER queries
         this.populateAlterQueries(result.alterQueries);
         
+        // Generate and display MODIFY queries
+        this.populateModifyQueries(result.modifyQueries);
+        
         // Scroll to results
         document.getElementById('resultsSection').scrollIntoView({ behavior: 'smooth' });
     }
@@ -409,7 +417,19 @@ class SQompareApp {
         const container = document.getElementById('alterQueriesContent');
         
         if (queries.length === 0) {
-            container.textContent = '-- No ALTER TABLE queries needed.\n-- All structures match!';
+            container.textContent = '-- No ADD column queries needed.\n-- All column structures match!';
+            return;
+        }
+        
+        const formattedQueries = queries.join('\n\n');
+        container.textContent = formattedQueries;
+    }
+
+    populateModifyQueries(queries) {
+        const container = document.getElementById('modifyQueriesContent');
+        
+        if (!queries || queries.length === 0) {
+            container.textContent = '-- No MODIFY column queries needed.\n-- All column structures match!';
             return;
         }
         
@@ -450,6 +470,7 @@ class SQompareApp {
             // Update only the queries sections
             this.populateCreateTableQueries(this.comparisonResult.createTableQueries);
             this.populateAlterQueries(this.comparisonResult.alterQueries);
+            this.populateModifyQueries(this.comparisonResult.modifyQueries);
             
         } catch (error) {
             this.showError(`Failed to regenerate queries: ${error.message}`);
@@ -485,7 +506,7 @@ class SQompareApp {
 
     async copyQueries() {
         if (!this.comparisonResult || this.comparisonResult.alterQueries.length === 0) {
-            this.showError('No queries to copy.');
+            this.showError('No ADD column queries to copy.');
             return;
         }
         
@@ -496,6 +517,33 @@ class SQompareApp {
             
             // Visual feedback
             const btn = document.getElementById('copyQueries');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
+            btn.style.backgroundColor = '#10b981';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.backgroundColor = '';
+            }, 2000);
+            
+        } catch (error) {
+            this.showError('Failed to copy to clipboard.');
+        }
+    }
+
+    async copyModifyQueries() {
+        if (!this.comparisonResult || !this.comparisonResult.modifyQueries || this.comparisonResult.modifyQueries.length === 0) {
+            this.showError('No MODIFY column queries to copy.');
+            return;
+        }
+        
+        const queries = this.comparisonResult.modifyQueries.join('\n\n');
+        
+        try {
+            await navigator.clipboard.writeText(queries);
+            
+            // Visual feedback
+            const btn = document.getElementById('copyModifyQueries');
             const originalText = btn.innerHTML;
             btn.innerHTML = '<i class="fas fa-check"></i> Copied!';
             btn.style.backgroundColor = '#10b981';
@@ -550,7 +598,7 @@ class SQompareApp {
     }
 
     generateReport() {
-        const { missingTables, missingColumns, alterQueries, createTableQueries } = this.comparisonResult;
+        const { missingTables, missingColumns, alterQueries, createTableQueries, modifyQueries } = this.comparisonResult;
         const timestamp = new Date().toISOString();
         
         let report = `-- SQompare Database Structure Comparison Report\n`;
@@ -561,7 +609,12 @@ class SQompareApp {
         report += `-- SUMMARY:\n`;
         report += `-- Missing Tables: ${missingTables.length}\n`;
         report += `-- Missing Columns: ${missingColumns.length}\n`;
-        report += `-- Matching Tables: ${this.comparisonResult.matchingTables.length}\n\n`;
+        report += `-- Matching Tables: ${this.comparisonResult.matchingTables.length}\n`;
+        
+        if (this.comparisonResult.differentColumns) {
+            report += `-- Different Columns: ${this.comparisonResult.differentColumns.length}\n`;
+        }
+        report += '\n';
         
         if (createTableQueries.length > 0) {
             report += `-- CREATE TABLE QUERIES FOR MISSING TABLES:\n`;
@@ -574,7 +627,17 @@ class SQompareApp {
             report += `-- ALTER TABLE QUERIES TO ADD MISSING COLUMNS:\n`;
             report += `-- Execute these queries to add missing columns\n\n`;
             report += alterQueries.join('\n\n');
-        } else {
+            report += '\n\n';
+        }
+        
+        if (modifyQueries && modifyQueries.length > 0) {
+            report += `-- ALTER TABLE QUERIES TO MODIFY EXISTING COLUMNS:\n`;
+            report += `-- Execute these queries to modify different columns\n\n`;
+            report += modifyQueries.join('\n\n');
+            report += '\n\n';
+        }
+        
+        if (alterQueries.length === 0 && (!modifyQueries || modifyQueries.length === 0)) {
             report += `-- No ALTER TABLE queries needed.\n`;
             report += `-- All column structures are in sync!\n`;
         }

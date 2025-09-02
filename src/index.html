@@ -167,7 +167,8 @@
                     <button class="tab-btn active" data-tab="missing-tables">Missing Tables</button>
                     <button class="tab-btn" data-tab="missing-columns">Missing Columns</button>
                     <button class="tab-btn" data-tab="create-tables">CREATE Tables</button>
-                    <button class="tab-btn" data-tab="alter-queries">ALTER Queries</button>
+                    <button class="tab-btn" data-tab="alter-queries">ADD Columns</button>
+                    <button class="tab-btn" data-tab="modify-queries">MODIFY Columns</button>
                 </div>
 
                 <div class="results-content">
@@ -228,13 +229,28 @@
                     <div class="tab-content" id="alter-queries">
                         <div class="queries-container">
                             <div class="queries-header">
-                                <h4>Generated ALTER TABLE Statements</h4>
+                                <h4>Generated ADD Column Statements</h4>
                                 <button class="btn btn-sm btn-secondary" id="copyQueries">
                                     <i class="fas fa-copy"></i>
                                     Copy All
                                 </button>
                             </div>
                             <pre class="code-block" id="alterQueriesContent">
+                                <!-- Dynamic content -->
+                            </pre>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="modify-queries">
+                        <div class="queries-container">
+                            <div class="queries-header">
+                                <h4>Generated MODIFY Column Statements</h4>
+                                <button class="btn btn-sm btn-secondary" id="copyModifyQueries">
+                                    <i class="fas fa-copy"></i>
+                                    Copy All
+                                </button>
+                            </div>
+                            <pre class="code-block" id="modifyQueriesContent">
                                 <!-- Dynamic content -->
                             </pre>
                         </div>
