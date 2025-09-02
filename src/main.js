@@ -111,7 +111,7 @@ function createMenu() {
             dialog.showMessageBox(mainWindow, {
               type: 'info',
               title: 'About SQompare',
-              message: 'SQompare v1.1.0',
+              message: 'SQompare v1.2.0',
               detail: 'A modern SQL database structure comparison tool\n\nAuthor: Sebastian \'tappava\' L.'
             });
           }
